@@ -1,4 +1,5 @@
-CC = g++
+CC = clang++
+LINK = g++
 PROJECT_DIR = .
 SRC_DIR = $(PROJECT_DIR)/src
 INC_DIR = $(PROJECT_DIR)/inc
@@ -30,13 +31,13 @@ FRONT_OBJ = $(MAIN_OBJ) $(LEXER_OBJ) $(AST_OBJ) $(PARSER_OBJ) $(CODEGEN_OBJ)
 
 TOOL = $(BIN_DIR)/dcc
 CONFIG = llvm-config
-LLVM_FLAGS = --cxxflags --ldflags --libs
+LLVM_FLAGS = --cxxflags --ldflags --system-libs --libs all
 INC_FLAGS = -I$(INC_DIR)
 
 
 all:$(FRONT_OBJ)
 	mkdir -p $(BIN_DIR)
-	$(CC) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -L/lib/i386-linux-gnu -lpthread -ldl -lm -o $(TOOL)
+	$(LINK) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -o $(TOOL)
 
 $(MAIN_OBJ):$(MAIN_SRC_PATH)
 	mkdir -p $(OBJ_DIR)

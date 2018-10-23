@@ -1,6 +1,6 @@
 #ifndef LEXER_HPP
 #define LEXER_HPP
-	
+
 #include<cstdio>
 #include<cstdlib>
 #include<fstream>
@@ -37,8 +37,8 @@ typedef class Token{
 
 
 	public:
-	Token(std::string string, TokenType type, int line) 
-		: TokenString(string), Type(type), Line(line){
+	Token(std::string string, TokenType type, int line)
+		: Type(type), TokenString(string), Line(line){
 		if(type == TOK_DIGIT)
 			Number = atoi(string.c_str());
 		else
@@ -52,7 +52,7 @@ typedef class Token{
 	int getNumberValue(){return Number;};
 	bool setLine(int line){Line=line;return true;}
 	int getLine(){return Line;}
-	
+
 }Token;
 
 
@@ -87,8 +87,8 @@ class TokenStream{
 		bool printTokens();
 		int getCurIndex(){return CurIndex;}
 		bool applyTokenIndex(int index){CurIndex=index;return true;}
-		
-		
+
+
 
 	private:
 

@@ -1,13 +1,20 @@
-#include "llvm/Assembly/PrintModulePass.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/PassManager.h"
+#include "llvm/ADT/Optional.h"
+#include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/LinkAllPasses.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "lexer.hpp"
 #include "AST.hpp"
 #include "parser.hpp"
@@ -30,8 +37,8 @@ class OptionParser
 	public:
 		OptionParser(int argc, char **argv):Argc(argc), Argv(argv), WithJit(false){}
 		void printHelp();
-		std::string getInputFileName(){return InputFileName;} 		//入力ファイル名取得
-		std::string getOutputFileName(){return OutputFileName;} 	//出力ファイル名取得
+		std::string getInputFileName(){return InputFileName;} 	//入力ファイル名取得
+		std::string getOutputFileName(){return OutputFileName;} //出力ファイル名取得
 		std::string getLinkFileName(){return LinkFileName;} 	//リンク用ファイル名取得
 		bool getWithJit(){return WithJit;}		//JIT実行有無
 		bool parseOption();
@@ -83,7 +90,7 @@ bool OptionParser::parseOption(){
 	if (OutputFileName.empty() && (len > 2) &&
 		ifn[len-3] == '.' &&
 		((ifn[len-2] == 'd' && ifn[len-1] == 'c'))) {
-		OutputFileName = std::string(ifn.begin(), ifn.end()-3); 
+		OutputFileName = std::string(ifn.begin(), ifn.end()-3);
 		OutputFileName += ".s";
 	} else if(OutputFileName.empty()){
 		OutputFileName = ifn;
@@ -93,13 +100,12 @@ bool OptionParser::parseOption(){
 	return true;
 }
 
-
 /**
  * main関数
  */
 int main(int argc, char **argv) {
 	llvm::InitializeNativeTarget();
-	llvm::sys::PrintStackTraceOnErrorSignal();
+	llvm::sys::PrintStackTraceOnErrorSignal(argv[0]);
 	llvm::PrettyStackTraceProgram X(argc, argv);
 
 	llvm::EnableDebugBuffering = true;
@@ -131,7 +137,7 @@ int main(int argc, char **argv) {
 	}
 
 	CodeGen *codegen=new CodeGen();
-	if(!codegen->doCodeGen(tunit, opt.getInputFileName(), 
+	if(!codegen->doCodeGen(tunit, opt.getInputFileName(),
 				opt.getLinkFileName(), opt.getWithJit()) ){
 		fprintf(stderr, "err at codegen\n");
 		SAFE_DELETE(parser);
@@ -140,30 +146,82 @@ int main(int argc, char **argv) {
 	}
 
 	//get Module
-	llvm::Module &mod=codegen->getModule();
-	if(mod.empty()){
+	llvm::Module &TheModule=codegen->getModule();
+	if(TheModule.empty()){
 		fprintf(stderr,"Module is empty");
 		SAFE_DELETE(parser);
 		SAFE_DELETE(codegen);
 		exit(1);
 	}
 
-	
-	llvm::PassManager pm;
+	TheModule.dump();
+
+/*
+	llvm::InitializeAllTargetInfos();
+	llvm::InitializeAllTargets();
+	llvm::InitializeAllTargetMCs();
+	llvm::InitializeAllAsmParsers();
+	llvm::InitializeAllAsmPrinters();
+
+	auto TargetTriple = llvm::sys::getDefaultTargetTriple();
+	TheModule.setTargetTriple(TargetTriple);
+
+	std::string err;
+	auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, err);
+	if (!Target) {
+		fprintf(stderr,"Failed to lookup target");
+		SAFE_DELETE(parser);
+		SAFE_DELETE(codegen);
+		exit(1);
+	}
+
+	auto CPU = "generic";
+	auto Features = "";
+	llvm::TargetOptions option;
+	auto RM = llvm::Optional<llvm::Reloc::Model>();
+	auto TheTargetMachine = Target->createTargetMachine(
+	  TargetTriple, CPU, Features, option, RM);
+
+	TheModule.setDataLayout(TheTargetMachine->createDataLayout());
+
+	auto Filename = opt.getOutputFileName().c_str();
+	std::error_code err_code;
+	llvm::raw_fd_ostream dest(Filename, err_code, llvm::sys::fs::F_None);
+	if (err_code) {
+		fprintf(stderr,"Could not open file");
+		SAFE_DELETE(parser);
+		SAFE_DELETE(codegen);
+		exit(1);
+	}
+
+	llvm::legacy::PassManager pass;
+	auto FileType = llvm::TargetMachine::CGFT_ObjectFile;
+	if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
+		fprintf(stderr,"TheTargetMachine can't emit a file of this type");
+		SAFE_DELETE(parser);
+		SAFE_DELETE(codegen);
+		exit(1);
+	}
+	pass.run(TheModule);
+	dest.flush();
+
+	/*
+	llvm::legacy::PassManager pm;
 
 	//SSA化
-	pm.add(llvm::createPromoteMemoryToRegisterPass());
+	//pm.add(llvm::createPromoteMemoryToRegisterPass());
 
 	//出力
-	std::string error;
+	std::error_code error;
 	llvm::raw_fd_ostream raw_stream(opt.getOutputFileName().c_str(), error);
-	pm.add(createPrintModulePass(&raw_stream));
+	pm.add(llvm::createPrintModulePass(raw_stream));
+	//llvm::AnalysisManager<llvm::Module> mm;
 	pm.run(mod);
 	raw_stream.close();
-
+*/
 	//delete
 	SAFE_DELETE(parser);
 	SAFE_DELETE(codegen);
-  
+
 	return 0;
 }
