@@ -127,7 +127,7 @@ llvm::Function *CodeGen::generatePrototype(PrototypeAST *proto, llvm::Module *mo
 	//already declared?
 	llvm::Function *func=mod->getFunction(proto->getName());
 	if(func){
-		if(func->arg_size()==proto->getParamNum() &&
+		if(static_cast<int>(func->arg_size())==proto->getParamNum() &&
 				func->empty()){
 			return func;
 		}else{
@@ -312,6 +312,8 @@ llvm::Value *CodeGen::generateBinaryExpression(BinaryExprAST *bin_expr){
 		//div
 		return Builder->CreateSDiv(lhs_v, rhs_v, "div_tmp");
 	}
+	// not reach
+	return nullptr;
 }
 
 
@@ -370,7 +372,7 @@ llvm::Value *CodeGen::generateCallExpression(CallExprAST *call_expr){
   */
 llvm::Value *CodeGen::generateJumpStatement(JumpStmtAST *jump_stmt){
 	BaseAST *expr=jump_stmt->getExpr();
-	llvm::Value *ret_v;
+	llvm::Value *ret_v = nullptr;
 	if(llvm::isa<BinaryExprAST>(expr)){
 		ret_v=generateBinaryExpression(llvm::dyn_cast<BinaryExprAST>(expr));
 	}else if(llvm::isa<VariableAST>(expr)){
@@ -381,7 +383,7 @@ llvm::Value *CodeGen::generateJumpStatement(JumpStmtAST *jump_stmt){
 		ret_v=generateNumber(num->getNumberValue());
 
 	}
-	Builder->CreateRet(ret_v);
+	return Builder->CreateRet(ret_v);
 }
 
 

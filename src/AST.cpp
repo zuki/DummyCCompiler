@@ -5,12 +5,12 @@
   * デストラクタ
   */
 TranslationUnitAST::~TranslationUnitAST(){
-	for(int i=0; i<Prototypes.size(); i++){
+	for(unsigned int i=0; i<Prototypes.size(); i++){
 		SAFE_DELETE(Prototypes[i]);
 	}
 	Prototypes.clear();
 
-	for(int i=0; i<Functions.size(); i++){
+	for(unsigned int i=0; i<Functions.size(); i++){
 		SAFE_DELETE(Functions[i]);
 	}
 	Functions.clear();
@@ -60,13 +60,13 @@ FunctionAST::~FunctionAST(){
   */
 FunctionStmtAST::~FunctionStmtAST(){
 	//delete variable_declaration
-	for(int i=0; i<VariableDecls.size(); i++){
+	for(unsigned int i=0; i<VariableDecls.size(); i++){
 		SAFE_DELETE(VariableDecls[i]);
 	}
 	VariableDecls.clear();
 
 	//delete statements
-	for(int i=0; i<StmtLists.size(); i++){
+	for(unsigned int i=0; i<StmtLists.size(); i++){
 		SAFE_DELETE(StmtLists[i]);
 	}
 	StmtLists.clear();
@@ -88,9 +88,7 @@ bool FunctionStmtAST::addVariableDeclaration(VariableDeclAST *vdecl){
   * デストラクタ
   */
 CallExprAST::~CallExprAST(){
-	for(int i=0; i<Args.size(); i++){
+	for(unsigned int i=0; i<Args.size(); i++){
 		SAFE_DELETE(Args[i]);
 	}
 }
-
-

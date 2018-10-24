@@ -22,28 +22,28 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 		char next_char;
 		std::string line;
 		Token *next_token;
-		int index=0;				
+		int index=0;
 		int length=cur_line.length();
-	
-		while(index<length){	
+
+		while(index<length){
 			next_char = cur_line.at(index++);
 
 			//コメントアウト読み飛ばし
 			if(iscomment){
-				if( (length-index) < 2 
-					||	(cur_line.at(index) != '*') 
+				if( (length-index) < 2
+					||	(cur_line.at(index) != '*')
 					|| (cur_line.at(index++) != '/') ){
 					continue;
 				}else{
 					iscomment=false;
 				}
 			}
-		
+
 			//EOF
 			if(next_char == EOF){
 				token_str = EOF;
 				next_token = new Token(token_str, TOK_EOF, line_num);
-		
+
 			}else if(isspace(next_char)){
 				continue;
 
@@ -58,7 +58,7 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 						break;
 				}
 				index--;
-		
+
 				if(token_str == "int"){
 					next_token = new Token(token_str, TOK_INT, line_num);
 				}else if(token_str == "return"){
@@ -66,7 +66,7 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 				}else{
 					next_token = new Token(token_str, TOK_IDENTIFIER, line_num);
 				}
-		
+
 			//数字
 			}else if(isdigit(next_char)){
 				if(next_char=='0'){
@@ -82,7 +82,7 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 					next_token = new Token(token_str, TOK_DIGIT, line_num);
 					index--;
 				}
-		
+
 			//コメント or '/'
 			}else if(next_char == '/'){
 				token_str += next_char;
@@ -91,18 +91,18 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 				//コメントの場合
 				if(next_char == '/'){
 						break;
-		
+
 				//コメントの場合
 				}else if(next_char == '*'){
 					iscomment=true;
 					continue;
-		
+
 				//DIVIDER('/')
 				}else{
 					index--;
 					next_token = new Token(token_str, TOK_SYMBOL, line_num);
 				}
-		
+
 			//それ以外(記号)
 			}else{
 				if(next_char == '*' ||
@@ -125,7 +125,7 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 					return NULL;
 				}
 			}
-		
+
 			//Tokensに追加
 			tokens->pushToken(next_token);
 			token_str.clear();
@@ -147,14 +147,14 @@ TokenStream *LexicalAnalysis(std::string input_filename){
 	ifs.close();
 	return tokens;
 }
-	
+
 
 
 /**
   * デストラクタ
   */
 TokenStream::~TokenStream(){
-	for(int i=0; i<Tokens.size(); i++){
+	for(unsigned int i=0; i<Tokens.size(); i++){
 		SAFE_DELETE(Tokens[i]);
 	}
 	Tokens.clear();
@@ -180,7 +180,7 @@ bool TokenStream::getNextToken(){
 		return false;
 	}else if( CurIndex < size ){
 		CurIndex++;
-		return true;	
+		return true;
 	}else{
 		return false;
 	}
@@ -214,5 +214,3 @@ bool TokenStream::printTokens(){
 	}
 	return true;
 }
-
-

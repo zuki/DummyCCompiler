@@ -34,7 +34,7 @@ TranslationUnitAST &Parser::getAST(){
 		return *(new TranslationUnitAST());
 }
 
-
+// translation_unit : { external_declaration }
 /**
   * TranslationUnit用構文解析メソッド
   * @return 解析成功：true　解析失敗：false
@@ -59,12 +59,13 @@ bool Parser::visitTranslationUnit(){
 	return true;
 }
 
-
+// external_declaration
+//	: function_declaration | function_definition
 /**
   * ExternalDeclaration用構文解析クラス
   * 解析したPrototyupeとFunctionASTをTranslationUitに追加
   * @param TranslationUnitAST
-  * @return true 
+  * @return true
   */
 bool Parser::visitExternalDeclaration(
 		TranslationUnitAST *tunit
@@ -87,6 +88,7 @@ bool Parser::visitExternalDeclaration(
 }
 
 
+// function_declaration : prototype , ";"
 /**
   * FunctionDclaration用構文解析メソッド
   * @return 解析成功：PrototypeAST　解析失敗：NULL
@@ -100,39 +102,43 @@ PrototypeAST *Parser::visitFunctionDeclaration(){
 
 	//prototype;
 	if(Tokens->getCurString()==";"){
+		// PrototypeTableに登録済 または FunctionTableに
+		// 登録済みで引数の数が違う場合はエラー
 		if( PrototypeTable.find(proto->getName()) != PrototypeTable.end() ||
 			(FunctionTable.find(proto->getName()) != FunctionTable.end() &&
 			FunctionTable[proto->getName()] != proto->getParamNum() ) ){
-			fprintf(stderr, "Function：%s is redefined" ,proto->getName().c_str()); 
+			fprintf(stderr, "Function：%s is redefined" ,proto->getName().c_str());
 			SAFE_DELETE(proto);
 			return NULL;
 		}
 		PrototypeTable[proto->getName()]=proto->getParamNum();
 		Tokens->getNextToken();
 		return proto;
-	}else{
+	}else{ // NextTokenが ';' でなければエラー
 		SAFE_DELETE(proto);
 		Tokens->applyTokenIndex(bkup);
 		return NULL;
 	}
-	
+
 }
 
-
+// function_definition : prototype, function_statement
 /**
   * FunctionDfinition用構文解析メソッド
   * @return 解析成功：FunctionAST　解析失敗：NULL
   */
 FunctionAST *Parser::visitFunctionDefinition(){
 	int bkup=Tokens->getCurIndex();
-
+	// 先頭は Prototype
 	PrototypeAST *proto=visitPrototype();
 	if(!proto){
 		return NULL;
+	// PrototypeTableに登録済で引数の数が違う
+	// または FunctionTableに登録済み場合はエラー
 	}else if( (PrototypeTable.find(proto->getName()) != PrototypeTable.end() &&
 				PrototypeTable[proto->getName()] != proto->getParamNum() ) ||
 				FunctionTable.find(proto->getName()) != FunctionTable.end()){
-			fprintf(stderr, "Function：%s is redefined" ,proto->getName().c_str()); 
+			fprintf(stderr, "Function：%s is redefined" ,proto->getName().c_str());
 			SAFE_DELETE(proto);
 			return NULL;
 	}
@@ -149,18 +155,18 @@ FunctionAST *Parser::visitFunctionDefinition(){
 	}
 }
 
-
+// prototype : "int" , identifier , "(" , parameter_list , ")"
 /**
   * Prototype用構文解析メソッド
   * @return 解析成功：PrototypeAST　解析失敗：NULL
   */
-PrototypeAST *Parser	::visitPrototype(){
+PrototypeAST *Parser::visitPrototype(){
 	std::string func_name;
 
 	//bkup index
 	int bkup=Tokens->getCurIndex();
 
-	//type_specifier
+	//type_specifier: 'int'
 	if(Tokens->getCurType()==TOK_INT){
 		Tokens->getNextToken();
 	}else{
@@ -186,7 +192,8 @@ PrototypeAST *Parser	::visitPrototype(){
 	}
 
 
-	//parameter_list
+	//parameter_list: [ parameter, { ',' , parameter } ]
+	//  parameter : "int" , identifier
 	std::vector<std::string> param_list;
 	bool is_first_param = true;
 	while(true){
@@ -197,11 +204,11 @@ PrototypeAST *Parser	::visitPrototype(){
 		if(Tokens->getCurType()==TOK_INT){
 			Tokens->getNextToken();
 		}else{
-			break;
+			break; // 最初に 'int' が来なければparamterは終了
 		}
 
 		if(Tokens->getCurType()==TOK_IDENTIFIER){
-			//引数の変数名に被りがないか確認
+			//引数の変数名に被りがあったらエラー
 			if(std::find(param_list.begin(), param_list.end(), Tokens->getCurString()) !=
 					param_list.end()){
 				Tokens->applyTokenIndex(bkup);
@@ -209,15 +216,15 @@ PrototypeAST *Parser	::visitPrototype(){
 			}
 			param_list.push_back(Tokens->getCurString());
 			Tokens->getNextToken();
-		}else{
+		}else{ // intの次が識別子ではないのでエラー
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
 		}
 		is_first_param = false;
 	}
-	
 
-	//')'
+
+	// ')'
 	if(Tokens->getCurString()==")"){
 		Tokens->getNextToken();
 		return new PrototypeAST(func_name, param_list);
@@ -227,7 +234,8 @@ PrototypeAST *Parser	::visitPrototype(){
 	}
 }
 
-
+// function_statement
+//   : "{" , [ variable_declaration_list ] , statement_list , "}"
 /**
   * FunctionStatement用構文解析メソッド
   * @param 勘数名，引数を格納したPrototypeクラスのインスタンス
@@ -236,7 +244,7 @@ PrototypeAST *Parser	::visitPrototype(){
 FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 	int bkup=Tokens->getCurIndex();
 
-	//{
+	// '{'
 	if(Tokens->getCurString()=="{"){
 		Tokens->getNextToken();
 	}else{
@@ -246,30 +254,23 @@ FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 	//create FunctionStatement
 	FunctionStmtAST *func_stmt = new FunctionStmtAST();
 
-	//add parameter to FunctionStatement
+	// 引数を FunctionStatement に追加
 	for(int i=0; i<proto->getParamNum(); i++){
 		VariableDeclAST *vdecl=new VariableDeclAST(proto->getParamName(i));
-		vdecl->setDeclType(VariableDeclAST::param);
+		vdecl->setDeclType(VariableDeclAST::param); // 変数種別はparam
 		func_stmt->addVariableDeclaration(vdecl);
 		VariableTable.push_back(vdecl->getName());
 	}
 
 	VariableDeclAST *var_decl;
 	BaseAST *stmt;
-	BaseAST *last_stmt;
+	BaseAST *last_stmt = nullptr;
 
-	//{statement_list}
-	if(stmt=visitStatement()){
-		while(stmt){
-			last_stmt=stmt;
-			func_stmt->addStatement(stmt);
-			stmt=visitStatement();
-		}
-
-	//variable_declaration_list
-	}else if(var_decl=visitVariableDeclaration()){
+	//variable_declaration_list: ローカル変数定義
+	if((var_decl=visitVariableDeclaration())){
 		while(var_decl){
 			var_decl->setDeclType(VariableDeclAST::local);
+			// 変数テーブルに登録済みの場合はエラー
 			if(std::find(VariableTable.begin(), VariableTable.end(), var_decl->getName()) !=
 					VariableTable.end()){
 				SAFE_DELETE(var_decl);
@@ -282,13 +283,21 @@ FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 			var_decl=visitVariableDeclaration();
 		}
 
-		if(stmt=visitStatement()){
+		if((stmt=visitStatement())){
 			while(stmt){
 				last_stmt=stmt;
 				func_stmt->addStatement(stmt);
 				stmt=visitStatement();
 			}
 		}
+	//{statement_list}: 本体ステートメント
+	}else if((stmt=visitStatement())){
+		while(stmt){
+			last_stmt=stmt;
+			func_stmt->addStatement(stmt);
+			stmt=visitStatement();
+		}
+
 
 	//other
 	}else{
@@ -298,13 +307,14 @@ FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 	}
 
 	//check if last statement is jump_statement
+	// 関数定義は jump_statement ('return' 文)で終わらなければならない)
 	if(!last_stmt || !llvm::isa<JumpStmtAST>(last_stmt)){
 		SAFE_DELETE(func_stmt);
 		Tokens->applyTokenIndex(bkup);
 		return NULL;
 	}
 
-	//}
+	// '}'
 	if(Tokens->getCurString()=="}"){
 		Tokens->getNextToken();
 		return func_stmt;
@@ -316,7 +326,7 @@ FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 
 }
 
-
+// variable_declaration : "int" , identifier , ";"
 /**
   * VariableDeclaration用構文解析メソッド
   * @return 解析成功：VariableDeclAST　解析失敗：NULL
@@ -324,13 +334,13 @@ FunctionStmtAST *Parser::visitFunctionStatement(PrototypeAST *proto){
 VariableDeclAST *Parser::visitVariableDeclaration(){
 	std::string name;
 
-	//INT
+	// 'int'
 	if(Tokens->getCurType()==TOK_INT){
-		Tokens->getNextToken();	
+		Tokens->getNextToken();
 	}else{
 		return NULL;
 	}
-	
+
 	//IDENTIFIER
 	if(Tokens->getCurType()==TOK_IDENTIFIER){
 		name=Tokens->getCurString();
@@ -339,34 +349,34 @@ VariableDeclAST *Parser::visitVariableDeclaration(){
 		Tokens->ungetToken(1);
 		return NULL;
 	}
-	
-	//';'
+
+	// ';'
 	if(Tokens->getCurString()==";"){
 		Tokens->getNextToken();
 		return new VariableDeclAST(name);
 	}else{
-		Tokens->ungetToken(2);	
+		Tokens->ungetToken(2);
 		return NULL;
 	}
 }
 
-
+// statement : expression_statement | jump_statement
 /**
   * Statement用構文解析メソッド
   * @return 解析成功：AST　解析失敗：NULL
   */
 BaseAST *Parser::visitStatement(){
 	BaseAST *stmt=NULL;
-	if(stmt=visitExpressionStatement()){
+	if((stmt=visitExpressionStatement())){
 		return stmt;
-	}else if(stmt=visitJumpStatement()){
+	}else if((stmt=visitJumpStatement())){
 		return stmt;
 	}else{
 		return NULL;
 	}
 }
 
-
+// expression_statement : ";" | assignment_expression , ";"
 /**
   * ExpressionStatement用構文解析メソッド
   * @return  解析成功：AST　解析失敗：NULL
@@ -387,7 +397,7 @@ BaseAST *Parser::visitExpressionStatement(){
 	return NULL;
 }
 
-
+// jump_statement : "return" , assignment_expression , ";"
 /**
   * JumpStatement用構文解析メソッド
   * @return 解析成功：AST　解析失敗：NULL
@@ -398,7 +408,7 @@ BaseAST *Parser::visitJumpStatement(){
 	BaseAST *expr;
 
 	if(Tokens->getCurType() == TOK_RETURN){
-		Tokens->getNextToken();	
+		Tokens->getNextToken();
 		if(!(expr=visitAssignmentExpression()) ){
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
@@ -416,7 +426,8 @@ BaseAST *Parser::visitJumpStatement(){
 	}
 }
 
-
+// assignment_expression : identifier , "=" , additive_expression
+//   | additive_expression
 /**
   * AssignmentExpression用構文解析メソッド
   * @return 解析成功：AST　解析失敗：NULL
@@ -424,10 +435,11 @@ BaseAST *Parser::visitJumpStatement(){
 BaseAST *Parser::visitAssignmentExpression(){
 	int bkup=Tokens->getCurIndex();
 
-	//	| IDENTIFIER '=' additive_expression
+	//	IDENTIFIER '=' additive_expression
 	BaseAST *lhs;
 	if(Tokens->getCurType()==TOK_IDENTIFIER){
-		//変数が宣言されているか確認
+		//変数は宣言されていなければならない
+		// 宣言されていない変数への代入は無視する
 		if(std::find(VariableTable.begin(), VariableTable.end(), Tokens->getCurString()) !=
 				VariableTable.end()){
 
@@ -437,7 +449,7 @@ BaseAST *Parser::visitAssignmentExpression(){
 			if(Tokens->getCurType()==TOK_SYMBOL &&
 				Tokens->getCurString()=="="){
 				Tokens->getNextToken();
-				if(rhs=visitAdditiveExpression(NULL)){
+				if((rhs=visitAdditiveExpression(NULL))){
 					return new BinaryExprAST("=", lhs, rhs);
 				}else{
 					SAFE_DELETE(lhs);
@@ -461,12 +473,13 @@ BaseAST *Parser::visitAssignmentExpression(){
 	return NULL;
 }
 
-
-
+// additive_expression : multiplicative_expression ,
+//    [ { "+" , multiplicative_expression
+//      | "-" , multiplicative_expression } ]
 /**
   * AdditiveExpression用構文解析メソッド
   * @param lhs(左辺),初回呼び出し時はNULL
-  * @return 解析成功：AST　解析失敗：NULL
+  * @return 解析成功：AST 解析失敗：NULL
   */
 BaseAST *Parser::visitAdditiveExpression(BaseAST *lhs){
 	//bkup index
@@ -474,12 +487,11 @@ BaseAST *Parser::visitAdditiveExpression(BaseAST *lhs){
 
 	if(!lhs)
 		lhs=visitMultiplicativeExpression(NULL);
-	BaseAST *rhs;
-
 	if(!lhs){
 		return NULL;
 	}
-	//+
+	BaseAST *rhs;
+	// '+'
 	if(Tokens->getCurType()==TOK_SYMBOL &&
 				Tokens->getCurString()=="+"){
 		Tokens->getNextToken();
@@ -493,8 +505,8 @@ BaseAST *Parser::visitAdditiveExpression(BaseAST *lhs){
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
 		}
-			
-	//-
+
+	// '-'
 	}else if(Tokens->getCurType()==TOK_SYMBOL &&
 				Tokens->getCurString()=="-"){
 		Tokens->getNextToken();
@@ -507,12 +519,14 @@ BaseAST *Parser::visitAdditiveExpression(BaseAST *lhs){
 			SAFE_DELETE(lhs);
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
-		}	
-	}	
+		}
+	}
 	return lhs;
 }
 
-
+// multiplicative_expression : postfix_expression ,
+//   [ { "*" , postfix_expression
+//     | "/" , postfix_expression } ]
 /**
   * MultiplicativeExpression用解析メソッド
   * @param  lhs(左辺),初回呼び出し時はNULL
@@ -525,12 +539,11 @@ BaseAST *Parser::visitMultiplicativeExpression(BaseAST *lhs){
 	//BaseAST *lhs=visitPostfixExpression();
 	if(!lhs)
 		lhs=visitPostfixExpression();
-	BaseAST *rhs;
-
 	if(!lhs){
 			return NULL;
 	}
-	// *
+	BaseAST *rhs;
+	// '*'
 	if(Tokens->getCurType()==TOK_SYMBOL &&
 				Tokens->getCurString()=="*"){
 		Tokens->getNextToken();
@@ -544,8 +557,8 @@ BaseAST *Parser::visitMultiplicativeExpression(BaseAST *lhs){
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
 		}
-			
-	// /
+
+	// '/'
 	}else if(Tokens->getCurType()==TOK_SYMBOL &&
 				Tokens->getCurString()=="/"){
 		Tokens->getNextToken();
@@ -558,12 +571,13 @@ BaseAST *Parser::visitMultiplicativeExpression(BaseAST *lhs){
 			SAFE_DELETE(lhs);
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
-		}	
-	}	
+		}
+	}
 	return lhs;
 }
 
-
+// postfix_expression : primary_expression
+//   |  identifier , "(" , [ assignment_expression , { "," , assignment_expression } ] , ")"
 /**
   * PostfixExpression用構文解析メソッド
   * @return 解析成功：AST　解析失敗：NULL
@@ -572,15 +586,15 @@ BaseAST *Parser::visitPostfixExpression(){
 	//get index
 	int bkup=Tokens->getCurIndex();
 
-	//primary_expression
+	// primary_expression
 	BaseAST *prim_expr=visitPrimaryExpression();
 	if(prim_expr){
 		return prim_expr;
 	}
 
-	//FUNCTION_IDENTIFIER
+	// 関数呼び出し
 	if(Tokens->getCurType()==TOK_IDENTIFIER){
-		//is FUNCTION_IDENTIFIER
+		// 引数の個数を得る。関数が未登録の場合はNULL return
 		int param_num;
 		if(PrototypeTable.find(Tokens->getCurString()) !=
 			PrototypeTable.end() ){
@@ -596,7 +610,7 @@ BaseAST *Parser::visitPostfixExpression(){
 		std::string Callee=Tokens->getCurString();
 		Tokens->getNextToken();
 
-		//LEFT PALEN
+		// '('
 		if(Tokens->getCurType()!=TOK_SYMBOL ||
 				Tokens->getCurString()!="("){
 			Tokens->applyTokenIndex(bkup);
@@ -604,7 +618,7 @@ BaseAST *Parser::visitPostfixExpression(){
 		}
 
 		Tokens->getNextToken();
-		//argument list
+		// 引数リスト: argument list
 		std::vector<BaseAST*> args;
 		BaseAST *assign_expr=visitAssignmentExpression();
 		if(assign_expr){
@@ -623,21 +637,21 @@ BaseAST *Parser::visitPostfixExpression(){
 			}//end while
 		}
 
-		//引数の数を確認
-		if(args.size() != param_num){
-			for(int i=0;i<args.size();i++)
+		// 実引数の数が定義と違う場合はエラー
+		if(args.size() != static_cast<unsigned int>(param_num)){
+			for(unsigned int i=0;i<args.size();i++)
 				SAFE_DELETE(args[i]);
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
 		}
-			
-		//RIGHT PALEN
+
+		// ')'
 		if(Tokens->getCurType()==TOK_SYMBOL &&
 					Tokens->getCurString()==")"){
 			Tokens->getNextToken();
 			return new CallExprAST(Callee, args);
 		}else{
-			for(int i=0;i<args.size();i++)
+			for(unsigned int i=0;i<args.size();i++)
 				SAFE_DELETE(args[i]);
 			Tokens->applyTokenIndex(bkup);
 			return NULL;
@@ -648,7 +662,8 @@ BaseAST *Parser::visitPostfixExpression(){
 	}
 }
 
-
+// primary_expression : identifier | integer
+//    | "(" , assignment_expression , ")"
 /**
   * PrimaryExpression用構文解析メソッド
   * @return 解析成功時：AST　失敗時：NULL
@@ -657,22 +672,21 @@ BaseAST *Parser::visitPrimaryExpression(){
 	//recored index
 	int bkup=Tokens->getCurIndex();
 
-
-	//VARIABLE_IDENTIFIER
+	// identifier: 定義済み変数
 	if(Tokens->getCurType()==TOK_IDENTIFIER &&
 		(std::find(VariableTable.begin(), VariableTable.end(), Tokens->getCurString()) !=
-		VariableTable.end()) ){
+		VariableTable.end())){
 		std::string var_name=Tokens->getCurString();
 		Tokens->getNextToken();
 		return new VariableAST(var_name);
 
-	//integer
+	// integer
 	}else if(Tokens->getCurType()==TOK_DIGIT){
 		int val=Tokens->getCurNumVal();
 		Tokens->getNextToken();
 		return new NumberAST(val);
 
-	//integer(-)
+	// integer(-)
 	}else if(Tokens->getCurType()==TOK_SYMBOL &&
 			Tokens->getCurString()=="-"){
 		Tokens->getNextToken();
@@ -711,4 +725,3 @@ BaseAST *Parser::visitPrimaryExpression(){
 
 	return NULL;
 }
-

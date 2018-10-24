@@ -25,7 +25,7 @@ typedef class Parser{
 
 		//意味解析用各種識別子表
 		std::vector<std::string> VariableTable;
-		std::map<std::string, int> PrototypeTable;
+		std::map<std::string, int> PrototypeTable; // 関数名=>引数の個数
 		std::map<std::string, int> FunctionTable;
 
 	protected:

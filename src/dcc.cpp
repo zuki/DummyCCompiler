@@ -35,7 +35,7 @@ class OptionParser
 		char **Argv;
 
 	public:
-		OptionParser(int argc, char **argv):Argc(argc), Argv(argv), WithJit(false){}
+		OptionParser(int argc, char **argv):WithJit(false),Argc(argc), Argv(argv){}
 		void printHelp();
 		std::string getInputFileName(){return InputFileName;} 	//入力ファイル名取得
 		std::string getOutputFileName(){return OutputFileName;} //出力ファイル名取得
@@ -205,7 +205,6 @@ int main(int argc, char **argv) {
 	pass.run(TheModule);
 	dest.flush();
 
-	/*
 	llvm::legacy::PassManager pm;
 
 	//SSA化
