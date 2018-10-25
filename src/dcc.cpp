@@ -154,6 +154,15 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	llvm::legacy::PassManager ThePM = llvm::legacy::PassManager();
+	ThePM.add(llvm::createInstructionCombiningPass());
+	// 式の再結合
+	ThePM.add(llvm::createReassociatePass());
+	// 共通部分式の消去
+	ThePM.add(llvm::createGVNPass());
+	// 制御フロー図の簡約化 (到達不能ブロックの削除など).
+	ThePM.add(llvm::createCFGSimplificationPass());
+	ThePM.run(TheModule);
 	TheModule.dump();
 
 /*
@@ -204,6 +213,8 @@ int main(int argc, char **argv) {
 	}
 	pass.run(TheModule);
 	dest.flush();
+	dest.close();
+
 
 	llvm::legacy::PassManager pm;
 
