@@ -1,13 +1,13 @@
 #include "codegen.hpp"
 
 llvm::LLVMContext TheContext;
+std::unique_ptr<llvm::Module> TheModule;
 
 /**
   * コンストラクタ
   */
 CodeGen::CodeGen(){
 	Builder = new llvm::IRBuilder<>(TheContext);
-	Mod = NULL;
 }
 
 /**
@@ -15,7 +15,6 @@ CodeGen::CodeGen(){
   */
 CodeGen::~CodeGen(){
 	SAFE_DELETE(Builder);
-	SAFE_DELETE(Mod);
 }
 
 
@@ -25,44 +24,18 @@ CodeGen::~CodeGen(){
   * @return 成功時：true　失敗時:false
   */
 bool CodeGen::doCodeGen(TranslationUnitAST &tunit, std::string name,
-		std::string link_file, bool with_jit=false){
+		std::string link_file){
 
 	if(!generateTranslationUnit(tunit, name)){
 		return false;
 	}
 
 	//LinkFileの指定があったらModuleをリンク
-	if( !link_file.empty() && !linkModule(Mod, link_file) )
+	if( !link_file.empty() && !linkModule(link_file) )
 		return false;
-
-	//JITのフラグが立っていたらJIT
-	/*
-	if(with_jit){
-		llvm::ExecutionEngine *EE = llvm::EngineBuilder(Mod).create();
-		llvm::EngineBuilder(Mod).create();
-			llvm::Function *F;
-		if(!(F=Mod->getFunction("main")))
-			return false;
-
-		int (*fp)() = (int (*)())EE->getPointerToFunction(F);
-		fprintf(stderr,"%d\n",fp());
-	}
-	*/
 
 	return true;
 }
-
-
-/**
-  * Module取得
-  */
-llvm::Module &CodeGen::getModule(){
-	if(Mod)
-		return *Mod;
-	else
-		return *(new llvm::Module("null", TheContext));
-}
-
 
 /**
   * Module生成メソッド
@@ -70,14 +43,14 @@ llvm::Module &CodeGen::getModule(){
   * @return 成功時：true　失敗時：false　
   */
 bool CodeGen::generateTranslationUnit(TranslationUnitAST &tunit, std::string name){
-	Mod = new llvm::Module(name, TheContext);
+	TheModule = llvm::make_unique<llvm::Module>(name, TheContext);
 	//funtion declaration
 	for(int i=0; ; i++){
 		PrototypeAST *proto=tunit.getPrototype(i);
 		if(!proto)
 			break;
-		else if(!generatePrototype(proto, Mod)){
-			SAFE_DELETE(Mod);
+		else if(!generatePrototype(proto)){
+			//SAFE_DELETE(Mod);
 			return false;
 		}
 	}
@@ -87,8 +60,8 @@ bool CodeGen::generateTranslationUnit(TranslationUnitAST &tunit, std::string nam
 		FunctionAST *func=tunit.getFunction(i);
 		if(!func)
 			break;
-		else if(!(generateFunctionDefinition(func, Mod))){
-			SAFE_DELETE(Mod);
+		else if(!(generateFunctionDefinition(func))){
+			//SAFE_DELETE(Mod);
 			return false;
 		}
 	}
@@ -102,9 +75,8 @@ bool CodeGen::generateTranslationUnit(TranslationUnitAST &tunit, std::string nam
   * @param  FunctionAST Module
   * @return 生成したFunctionのポインタ
   */
-llvm::Function *CodeGen::generateFunctionDefinition(FunctionAST *func_ast,
-		llvm::Module *mod){
-	llvm::Function *func=generatePrototype(func_ast->getPrototype(), mod);
+llvm::Function *CodeGen::generateFunctionDefinition(FunctionAST *func_ast) {
+	llvm::Function *func=generatePrototype(func_ast->getPrototype());
 	if(!func){
 		return NULL;
 	}
@@ -123,9 +95,9 @@ llvm::Function *CodeGen::generateFunctionDefinition(FunctionAST *func_ast,
   * @param  PrototypeAST, Module
   * @return 生成したFunctionのポインタ
   */
-llvm::Function *CodeGen::generatePrototype(PrototypeAST *proto, llvm::Module *mod){
+llvm::Function *CodeGen::generatePrototype(PrototypeAST *proto) {
 	//already declared?
-	llvm::Function *func=mod->getFunction(proto->getName());
+	llvm::Function *func=TheModule->getFunction(proto->getName());
 	if(func){
 		if(static_cast<int>(func->arg_size())==proto->getParamNum() &&
 				func->empty()){
@@ -149,7 +121,7 @@ llvm::Function *CodeGen::generatePrototype(PrototypeAST *proto, llvm::Module *mo
 	func=llvm::Function::Create(func_type,
 							llvm::Function::ExternalLinkage,
 							proto->getName(),
-							mod);
+							*TheModule);
 
 	//set names
 	llvm::Function::arg_iterator arg_iter=func->arg_begin();
@@ -360,7 +332,7 @@ llvm::Value *CodeGen::generateCallExpression(CallExprAST *call_expr){
 		}
 		arg_vec.push_back(arg_v);
 	}
-	return Builder->CreateCall( Mod->getFunction(call_expr->getCallee()),
+	return Builder->CreateCall( TheModule->getFunction(call_expr->getCallee()),
 										arg_vec,"call_tmp" );
 }
 
@@ -405,18 +377,15 @@ llvm::Value *CodeGen::generateNumber(int value){
 }
 
 
-bool CodeGen::linkModule(llvm::Module *dest, std::string file_name){
+bool CodeGen::linkModule(std::string file_name){
 	llvm::SMDiagnostic err;
 	std::unique_ptr<llvm::Module> link_mod = llvm::parseIRFile(file_name, err, TheContext);
 	if(!link_mod)
 		return false;
 
 	std::string err_msg;
-	//if(llvm::Linker::linkModules(dest, link_mod, llvm::Linker::DestroySource, &err_msg))
-	if(llvm::Linker::linkModules(*dest, std::move(link_mod)))
+	if(llvm::Linker::linkModules(*TheModule, std::move(link_mod)))
 		return false;
-
-	//SAFE_DELETE(link_mod);
 
 	return true;
 }

@@ -19,7 +19,9 @@
 #include "AST.hpp"
 #include "parser.hpp"
 #include "codegen.hpp"
+#include "DummyC.hpp"
 
+extern std::unique_ptr<llvm::Module> TheModule;
 
 /**
  * オプション切り出し用クラス
@@ -31,6 +33,7 @@ class OptionParser
 		std::string OutputFileName;
 		std::string LinkFileName;
 		bool WithJit;
+		bool ObjFile;
 		int Argc;
 		char **Argv;
 
@@ -41,6 +44,7 @@ class OptionParser
 		std::string getOutputFileName(){return OutputFileName;} //出力ファイル名取得
 		std::string getLinkFileName(){return LinkFileName;} 	//リンク用ファイル名取得
 		bool getWithJit(){return WithJit;}		//JIT実行有無
+		bool getObjFile(){return ObjFile;}		//オブジェクトファイルを出力
 		bool parseOption();
 };
 
@@ -76,6 +80,8 @@ bool OptionParser::parseOption(){
 			LinkFileName.assign(Argv[++i]);
 		}else if(Argv[i][0]=='-' && Argv[i][1] == 'j' && Argv[i][2] == 'i' && Argv[i][3] == 't' && Argv[i][4] == '\0'){
 			WithJit = true;
+		}else if(Argv[i][0]=='-' && Argv[i][1] == 'o' && Argv[i][2] == 'b' && Argv[i][3] == 'j' && Argv[i][4] == '\0'){
+			ObjFile = true;
 		}else if(Argv[i][0]=='-'){
 			fprintf(stderr,"%s は不明なオプションです\n", Argv[i]);
 			return false;
@@ -138,97 +144,124 @@ int main(int argc, char **argv) {
 
 	CodeGen *codegen=new CodeGen();
 	if(!codegen->doCodeGen(tunit, opt.getInputFileName(),
-				opt.getLinkFileName(), opt.getWithJit()) ){
+				opt.getLinkFileName()) ){
 		fprintf(stderr, "err at codegen\n");
 		SAFE_DELETE(parser);
 		SAFE_DELETE(codegen);
 		exit(1);
 	}
 
-	//get Module
-	llvm::Module &TheModule=codegen->getModule();
-	if(TheModule.empty()){
-		fprintf(stderr,"Module is empty");
+	if(!opt.getWithJit() && !opt.getObjFile()) {
+		llvm::legacy::PassManager ThePM = llvm::legacy::PassManager();
+		ThePM.add(llvm::createInstructionCombiningPass());
+		// 式の再結合
+		ThePM.add(llvm::createReassociatePass());
+		// 共通部分式の消去
+		ThePM.add(llvm::createGVNPass());
+		// 制御フロー図の簡約化 (到達不能ブロックの削除など).
+		ThePM.add(llvm::createCFGSimplificationPass());
+		ThePM.run(*TheModule);
+
+		TheModule->dump();
+
 		SAFE_DELETE(parser);
 		SAFE_DELETE(codegen);
-		exit(1);
+		return 0;
 	}
-
-	llvm::legacy::PassManager ThePM = llvm::legacy::PassManager();
-	ThePM.add(llvm::createInstructionCombiningPass());
-	// 式の再結合
-	ThePM.add(llvm::createReassociatePass());
-	// 共通部分式の消去
-	ThePM.add(llvm::createGVNPass());
-	// 制御フロー図の簡約化 (到達不能ブロックの削除など).
-	ThePM.add(llvm::createCFGSimplificationPass());
-	ThePM.run(TheModule);
-	TheModule.dump();
 
 /*
-	llvm::InitializeAllTargetInfos();
-	llvm::InitializeAllTargets();
-	llvm::InitializeAllTargetMCs();
-	llvm::InitializeAllAsmParsers();
-	llvm::InitializeAllAsmPrinters();
+	// JITコンパイル
+	llvm::InitializeNativeTarget();
+	llvm::InitializeNativeTargetAsmPrinter();
+	llvm::InitializeNativeTargetAsmParser();
 
-	auto TargetTriple = llvm::sys::getDefaultTargetTriple();
-	TheModule.setTargetTriple(TargetTriple);
+	std::unique_ptr<llvm::orc::DummyCJIT> TheJIT = llvm::make_unique<llvm::orc::DummyCJIT>();
+	TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
+	auto H = TheJIT->addModule(std::move(TheModule));
 
-	std::string err;
-	auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, err);
-	if (!Target) {
-		fprintf(stderr,"Failed to lookup target");
+	// main シンボル用のJITを検索する
+	auto MainSymbol = TheJIT->findSymbol("main");
+	assert(MainSymbol && "Main Function not found");
+
+	// symbolのアドレスを取得し、正しい型（引数はなしで、doubleを返す）
+	// にキャストし、ネイティブ関数として呼び出せるようにする
+	int (*FP)() = (int (*)())(intptr_t)cantFail(MainSymbol.getAddress());
+	fprintf(stderr, "Evaluated to %d\n", FP());
+	TheJIT->removeModule(H);
+
+	llvm::ExecutionEngine *EE = llvm::EngineBuilder(std::move(TheModule)).create();
+	fprintf(stderr, "EE ok\n");
+
+	llvm::Function *MainFunc;
+	if(!(MainFunc = EE->FindFunctionNamed("main"))) {
 		SAFE_DELETE(parser);
 		SAFE_DELETE(codegen);
 		exit(1);
 	}
-
-	auto CPU = "generic";
-	auto Features = "";
-	llvm::TargetOptions option;
-	auto RM = llvm::Optional<llvm::Reloc::Model>();
-	auto TheTargetMachine = Target->createTargetMachine(
-	  TargetTriple, CPU, Features, option, RM);
-
-	TheModule.setDataLayout(TheTargetMachine->createDataLayout());
-
-	auto Filename = opt.getOutputFileName().c_str();
-	std::error_code err_code;
-	llvm::raw_fd_ostream dest(Filename, err_code, llvm::sys::fs::F_None);
-	if (err_code) {
-		fprintf(stderr,"Could not open file");
-		SAFE_DELETE(parser);
-		SAFE_DELETE(codegen);
-		exit(1);
-	}
-
-	llvm::legacy::PassManager pass;
-	auto FileType = llvm::TargetMachine::CGFT_ObjectFile;
-	if (TheTargetMachine->addPassesToEmitFile(pass, dest, nullptr, FileType)) {
-		fprintf(stderr,"TheTargetMachine can't emit a file of this type");
-		SAFE_DELETE(parser);
-		SAFE_DELETE(codegen);
-		exit(1);
-	}
-	pass.run(TheModule);
-	dest.flush();
-	dest.close();
-
-
-	llvm::legacy::PassManager pm;
-
-	//SSA化
-	//pm.add(llvm::createPromoteMemoryToRegisterPass());
-
-	//出力
-	std::error_code error;
-	llvm::raw_fd_ostream raw_stream(opt.getOutputFileName().c_str(), error);
-	pm.add(llvm::createPrintModulePass(raw_stream));
-	//llvm::AnalysisManager<llvm::Module> mm;
-	pm.run(mod);
-	raw_stream.close();
+	fprintf(stderr, "MainFunc ok\n");
+	int (*fp)() = (int (*)())EE->getPointerToFunction(MainFunc);
+	fprintf(stderr, "fp ok\n");
+	fprintf(stderr,"%d\n",fp());
 */
+
+	if (opt.getObjFile()) {
+		llvm::InitializeAllTargetInfos();
+		llvm::InitializeAllTargets();
+		llvm::InitializeAllTargetMCs();
+		llvm::InitializeAllAsmParsers();
+		llvm::InitializeAllAsmPrinters();
+
+		auto TargetTriple = llvm::sys::getDefaultTargetTriple();
+		TheModule->setTargetTriple(TargetTriple);
+
+		std::string err;
+		auto Target = llvm::TargetRegistry::lookupTarget(TargetTriple, err);
+		if (!Target) {
+			fprintf(stderr, "%s\n", err.c_str());
+			SAFE_DELETE(parser);
+			SAFE_DELETE(codegen);
+			exit(1);
+		}
+
+		auto CPU = "generic";
+		auto Features = "";
+		llvm::TargetOptions option;
+		auto RM = llvm::Optional<llvm::Reloc::Model>();
+		auto TheTargetMachine = Target->createTargetMachine(
+		  TargetTriple, CPU, Features, option, RM);
+
+		TheModule->setDataLayout(TheTargetMachine->createDataLayout());
+
+		auto Filename = opt.getOutputFileName().c_str();
+		std::error_code err_code;
+		llvm::raw_fd_ostream dest(Filename, err_code, llvm::sys::fs::F_None);
+		if (err_code) {
+			fprintf(stderr, "Could not open file: %s\n", err_code.message().c_str());
+			SAFE_DELETE(parser);
+			SAFE_DELETE(codegen);
+			exit(1);
+		}
+
+		llvm::legacy::PassManager ThePM = llvm::legacy::PassManager();
+		ThePM.add(llvm::createInstructionCombiningPass());
+		// 式の再結合
+		ThePM.add(llvm::createReassociatePass());
+		// 共通部分式の消去
+		ThePM.add(llvm::createGVNPass());
+		// 制御フロー図の簡約化 (到達不能ブロックの削除など).
+		ThePM.add(llvm::createCFGSimplificationPass());
+
+		auto FileType = llvm::TargetMachine::CGFT_ObjectFile;
+		if (TheTargetMachine->addPassesToEmitFile(ThePM, dest, nullptr, FileType)) {
+			fprintf(stderr, "TheTargetMachine can't emit a file of this type\n");
+			SAFE_DELETE(parser);
+			SAFE_DELETE(codegen);
+			exit(1);
+		}
+		ThePM.run(*TheModule);
+		dest.flush();
+	}
+
 	//delete
 	SAFE_DELETE(parser);
 	SAFE_DELETE(codegen);
