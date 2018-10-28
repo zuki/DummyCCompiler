@@ -169,40 +169,19 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-/*
-	// JITコンパイル
-	llvm::InitializeNativeTarget();
-	llvm::InitializeNativeTargetAsmPrinter();
-	llvm::InitializeNativeTargetAsmParser();
+	if (opt.getWithJit()) {
+		// JITコンパイル
+		llvm::InitializeNativeTarget();
+		llvm::InitializeNativeTargetAsmPrinter();
+		llvm::InitializeNativeTargetAsmParser();
 
-	std::unique_ptr<llvm::orc::DummyCJIT> TheJIT = llvm::make_unique<llvm::orc::DummyCJIT>();
-	TheModule->setDataLayout(TheJIT->getTargetMachine().createDataLayout());
-	auto H = TheJIT->addModule(std::move(TheModule));
+		auto TheJIT = llvm::make_unique<llvm::orc::DummyCJIT>();
+		TheJIT->addModule(std::move(TheModule));
 
-	// main シンボル用のJITを検索する
-	auto MainSymbol = TheJIT->findSymbol("main");
-	assert(MainSymbol && "Main Function not found");
-
-	// symbolのアドレスを取得し、正しい型（引数はなしで、doubleを返す）
-	// にキャストし、ネイティブ関数として呼び出せるようにする
-	int (*FP)() = (int (*)())(intptr_t)cantFail(MainSymbol.getAddress());
-	fprintf(stderr, "Evaluated to %d\n", FP());
-	TheJIT->removeModule(H);
-
-	llvm::ExecutionEngine *EE = llvm::EngineBuilder(std::move(TheModule)).create();
-	fprintf(stderr, "EE ok\n");
-
-	llvm::Function *MainFunc;
-	if(!(MainFunc = EE->FindFunctionNamed("main"))) {
-		SAFE_DELETE(parser);
-		SAFE_DELETE(codegen);
-		exit(1);
+		// main シンボル用のJITを検索する
+		auto *Main = (int (*)())TheJIT->getSymbolAddress("main");
+		fprintf(stderr, "Evaluated to %d\n", Main());
 	}
-	fprintf(stderr, "MainFunc ok\n");
-	int (*fp)() = (int (*)())EE->getPointerToFunction(MainFunc);
-	fprintf(stderr, "fp ok\n");
-	fprintf(stderr,"%d\n",fp());
-*/
 
 	if (opt.getObjFile()) {
 		llvm::InitializeAllTargetInfos();

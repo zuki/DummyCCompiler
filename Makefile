@@ -38,7 +38,7 @@ INC_FLAGS = -I$(INC_DIR)
 
 all:$(FRONT_OBJ)
 	mkdir -p $(BIN_DIR)
-	$(LINK) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -o $(TOOL)
+	$(LINK) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -rdynamic -o $(TOOL)
 
 $(MAIN_OBJ):$(MAIN_SRC_PATH)
 	mkdir -p $(OBJ_DIR)
