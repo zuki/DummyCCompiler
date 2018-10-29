@@ -19,7 +19,8 @@
 #include "AST.hpp"
 #include "parser.hpp"
 #include "codegen.hpp"
-#include "DummyC.hpp"
+#include "DummyC-2.hpp"
+/* #include "DummyC.hpp" */
 
 extern std::unique_ptr<llvm::Module> TheModule;
 
@@ -175,12 +176,37 @@ int main(int argc, char **argv) {
 		llvm::InitializeNativeTargetAsmPrinter();
 		llvm::InitializeNativeTargetAsmParser();
 
+/* 旧
 		auto TheJIT = llvm::make_unique<llvm::orc::DummyCJIT>();
 		TheJIT->addModule(std::move(TheModule));
-
 		// main シンボル用のJITを検索する
-		auto *Main = (int (*)())TheJIT->getSymbolAddress("main");
-		fprintf(stderr, "Evaluated to %d\n", Main());
+-       auto *Main = (int (*)())TheJIT->getSymbolAddress("main");
+-       fprintf(stderr, "Evaluated to %d\n", Main());
+*/
+/*
+		llvm::orc::DummyCJIT::Create()とTheJIT->lookup("main")は
+		Expected<T>を返す
+		  Expected<T> values are also implicitly convertible to boolean,
+		  but with the opposite convention to Error:
+		    true for success, false for error.
+		TheJIT->addModule(std::move(TheModule))はErrorを返す
+		  Error values can be implicitly converted to bool:
+		    true for error, false for success
+*/
+		if (auto CreateJIT = llvm::orc::DummyCJIT::Create()) {
+			auto TheJIT = std::move(*CreateJIT);
+			if (!TheJIT->addModule(std::move(TheModule))) {
+				if (auto LookupMain = TheJIT->lookup("main")) {
+					auto *Main = (int (*)())LookupMain->getAddress();
+					fprintf(stderr, "Evaluated to %d\n", Main());
+					goto FIN;
+				}
+			}
+		}
+		fprintf(stderr, "Error at JIT\n");
+		SAFE_DELETE(parser);
+		SAFE_DELETE(codegen);
+		exit(1);
 	}
 
 	if (opt.getObjFile()) {
@@ -241,6 +267,7 @@ int main(int argc, char **argv) {
 		dest.flush();
 	}
 
+FIN:
 	//delete
 	SAFE_DELETE(parser);
 	SAFE_DELETE(codegen);
